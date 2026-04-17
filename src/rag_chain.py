@@ -1,8 +1,8 @@
-"""RAG chain — retrieval, prompt assembly, and Azure OpenAI invocation via LCEL."""
+"""RAG chain — retrieval, prompt assembly, and HuggingFace LLM invocation via LCEL."""
 
 import logging
 
-from langchain_openai import AzureChatOpenAI
+from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -28,13 +28,21 @@ _prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-_llm = AzureChatOpenAI(
-    azure_deployment=config.AZURE_OPENAI_CHAT_DEPLOYMENT,
-    azure_endpoint=config.AZURE_OPENAI_ENDPOINT,
-    api_key=config.AZURE_OPENAI_API_KEY,
-    api_version=config.AZURE_OPENAI_API_VERSION,
-    max_tokens=config.MAX_TOKENS,
-)
+try:
+    _pipeline = HuggingFacePipeline.from_model_id(
+        model_id=config.HF_LLM_MODEL,
+        task="text-generation",
+        pipeline_kwargs={
+            "max_new_tokens": config.MAX_NEW_TOKENS,
+            "temperature": 0.2,
+            "do_sample": True,
+        },
+    )
+    _llm = ChatHuggingFace(llm=_pipeline)
+except (OSError, ValueError) as exc:
+    raise RuntimeError(
+        f"Failed to load local model '{config.HF_LLM_MODEL}': {exc}"
+    ) from exc
 
 
 def _retrieve(question: str) -> list[Document]:

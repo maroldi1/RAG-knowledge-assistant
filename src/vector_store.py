@@ -28,6 +28,7 @@ def get_store() -> PGVector:
         connection=config.DATABASE_URL,
         distance_strategy=DistanceStrategy.COSINE,
     )
+    _store.create_vector_extension()
     _store.create_tables_if_not_exists()
     return _store
 

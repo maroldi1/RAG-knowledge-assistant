@@ -1,18 +1,17 @@
-"""Embedding helpers using Azure OpenAI via LangChain with in-memory caching."""
+"""Embedding helpers using HuggingFace via LangChain with in-memory caching."""
 
-from langchain_openai import AzureOpenAIEmbeddings
+import logging
+
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.stores import InMemoryByteStore
 from langchain.embeddings import CacheBackedEmbeddings
 
 from src import config
 
-_underlying = AzureOpenAIEmbeddings(
-    azure_deployment=config.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
-    azure_endpoint=config.AZURE_OPENAI_ENDPOINT,
-    api_key=config.AZURE_OPENAI_API_KEY,
-    api_version=config.AZURE_OPENAI_API_VERSION,
-    model=config.EMBEDDING_MODEL,
-)
+logger = logging.getLogger(__name__)
+logger.info("Loading embedding model: %s", config.EMBEDDING_MODEL)
+
+_underlying = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
 _store = InMemoryByteStore()
 _cached = CacheBackedEmbeddings.from_bytes_store(
     _underlying,

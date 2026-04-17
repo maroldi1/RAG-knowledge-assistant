@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
 
 import src.rag_chain as rc
 
@@ -15,10 +16,20 @@ def test_invoke_returns_answer_and_sources():
     ]
 
     with (
-        patch.object(rc, "embed_query", return_value=[0.1, 0.2, 0.3]),
-        patch.object(rc, "similarity_search", return_value=mock_docs),
-        patch("langchain_openai.AzureChatOpenAI.invoke", return_value=AIMessage(content="The answer is 42.")),
+        patch.object(rc, "_retrieve", return_value=mock_docs),
+        patch.object(rc, "_format_context", return_value="[policy.pdf]\nPolicy text"),
     ):
+        # Rebuild the chain with a fake LLM so the LCEL pipeline works end-to-end
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.runnables import RunnablePassthrough
+
+        fake_llm = RunnableLambda(lambda _: AIMessage(content="The answer is 42."))
+        rc._chain = (
+            RunnableLambda(rc._build_inputs)
+            | RunnablePassthrough.assign(
+                answer=rc._prompt.partial() | fake_llm | StrOutputParser()
+            )
+        )
         result = rc.invoke("What is the answer?")
 
     assert "answer" in result

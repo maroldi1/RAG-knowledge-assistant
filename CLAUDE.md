@@ -11,12 +11,12 @@ An internal knowledge assistant built with:
 - **LangChain** — orchestration (ingestion, retrieval, prompt assembly)
 - **pgvector** — PostgreSQL extension for vector similarity search
 - **E2B** — sandboxed Python execution environment
-- **Azure OpenAI** — embeddings and chat completion (gpt-5-nano)
+- **HuggingFace** — local embeddings (sentence-transformers) and local chat completion (transformers pipeline)
 - **Python 3.11+**
 
 The system has two runtime modes:
 1. **Ingestion mode** — chunk documents, embed them, store vectors in pgvector
-2. **Query mode** — embed the user question, retrieve top-k chunks, call Azure OpenAI
+2. **Query mode** — embed the user question, retrieve top-k chunks, call HuggingFace LLM
 
 ---
 
@@ -37,9 +37,10 @@ rag-assistant/
 │   ├── embedder.py            ← LangChain embedding wrapper
 │   ├── splitter.py            ← document loading + text splitting
 │   ├── vector_store.py        ← pgvector connection + CRUD helpers
-│   └── rag_chain.py           ← LangChain RAG chain + Azure OpenAI integration
+│   └── rag_chain.py           ← LangChain RAG chain + HuggingFace LLM integration
 ├── tests/
 │   ├── test_splitter.py
+│   ├── test_embedder.py
 │   ├── test_vector_store.py
 │   └── test_rag_chain.py
 └── docker-compose.yml         ← spins up PostgreSQL + pgvector locally
@@ -52,18 +53,14 @@ rag-assistant/
 All secrets live in `.env` (never committed). Copy `.env.example` to `.env`:
 
 ```
-AZURE_OPENAI_API_KEY=<your-azure-api-key>
-AZURE_OPENAI_ENDPOINT=https://alexa-meb5pqkz-swedencentral.cognitiveservices.azure.com/
-AZURE_OPENAI_API_VERSION=2024-12-01-preview
-AZURE_OPENAI_CHAT_DEPLOYMENT=rag-gpt-5-nano
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<your-embedding-deployment-name>
-EMBEDDING_MODEL=text-embedding-3-small
+HF_LLM_MODEL=mistralai/Mistral-7B-Instruct-v0.3
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 E2B_API_KEY=e2b_...
 DATABASE_URL=postgresql://user:password@localhost:5433/rag_db
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 TOP_K_RESULTS=5
-MAX_TOKENS=1024
+MAX_NEW_TOKENS=512
 ```
 
 `src/config.py` must raise a clear `ValueError` at import time if any required
@@ -95,17 +92,17 @@ variable is missing.
 - Distance strategy: `DistanceStrategy.COSINE`
 - Always call `.create_tables_if_not_exist()` at startup
 
-### Azure OpenAI
-- Use the `openai` Python SDK with `AzureOpenAI` client
-- Endpoint, API key, and API version from environment variables
-- Chat model deployment: `AZURE_OPENAI_CHAT_DEPLOYMENT` (gpt-5-nano)
-- Embedding deployment: `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`
+### HuggingFace
+- Use `HuggingFaceEmbeddings` from `langchain-huggingface` for local embeddings
+- Use `HuggingFacePipeline` from `langchain-huggingface` for local LLM inference,
+  wrapped in `ChatHuggingFace` for chat-style prompts
+- Embedding model: `config.EMBEDDING_MODEL` (default `sentence-transformers/all-MiniLM-L6-v2`)
+- LLM model: `config.HF_LLM_MODEL` (required, e.g. `mistralai/Mistral-7B-Instruct-v0.3`)
+- All models run locally — no API tokens required
 - Temperature: `0.2` for factual Q&A
 - Include a system prompt that instructs the model to cite which document
   chunk it used
-- `max_completion_tokens`: 1024 (adjustable via env var `MAX_TOKENS`)
-- For LangChain integration, use `AzureChatOpenAI` from `langchain-openai`
-  and `AzureOpenAIEmbeddings` from `langchain-openai`
+- `max_new_tokens`: 512 (adjustable via env var `MAX_NEW_TOKENS`)
 
 ### E2B sandbox
 - Use the `e2b` Python SDK
@@ -150,7 +147,7 @@ Each stored document chunk carries this metadata:
 user_question (str)
   → embedder.embed_query()             # single embedding call
   → vector_store.similarity_search()  # top-k cosine neighbours
-  → rag_chain.invoke()                 # assemble prompt + call Azure OpenAI
+  → rag_chain.invoke()                 # assemble prompt + call HuggingFace LLM
   → print answer + sources
 ```
 
@@ -191,7 +188,8 @@ pytest tests/ -v
 ```
 
 Tests must not make real API calls. Use `pytest-mock` to patch:
-- `openai.AzureOpenAI` client
+- `langchain_huggingface.HuggingFaceEmbeddings`
+- `langchain_huggingface.HuggingFaceEndpoint`
 - `langchain_postgres.PGVector`
 - `e2b.Sandbox`
 
